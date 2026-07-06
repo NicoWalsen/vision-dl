@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="es-CL">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Visión DL · Dashcam</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap');
+
+:root{
+  --bg:#0B1620;
+  --surface:#12222E;
+  --line:#1E3442;
+  --text:#E8F0F2;
+  --muted:#7C93A0;
+  --ev:#35D0BA;          /* vehículos */
+  --gas:#F2A03D;         /* personas */
+  --sig:#E5695E;         /* señalética */
+  --other:#9DB4C0;       /* resto */
+  --display:'Space Grotesk',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg);color:var(--text);font-family:var(--body);
+  font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;
+}
+#app{max-width:560px;margin:0 auto;padding:16px 14px calc(20px + env(safe-area-inset-bottom))}
+
+/* ---------- encabezado ---------- */
+.brand{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px}
+.brand h1{font-family:var(--display);font-size:13px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+.brand h1 b{color:var(--ev)}
+.brand span{font-size:11px;color:var(--muted);letter-spacing:.08em}
+
+/* ---------- escenario de video ---------- */
+#stage{
+  position:relative;width:100%;aspect-ratio:3/4;max-height:72vh;
+  background:#000;border:1px solid var(--line);border-radius:16px;overflow:hidden;
+}
+#cam,#overlay{position:absolute;inset:0;width:100%;height:100%}
+#cam{object-fit:fill;background:#000}
+#overlay{pointer-events:none}
+
+/* HUD superior dentro del video */
+#hud{
+  position:absolute;top:0;left:0;right:0;
+  display:flex;justify-content:space-between;align-items:center;
+  padding:10px 12px;font-family:var(--display);
+  font-size:11.5px;letter-spacing:.06em;color:var(--text);
+  background:linear-gradient(rgba(11,22,32,.75),transparent);
+  font-variant-numeric:tabular-nums;
+}
+#hud .rec{display:flex;align-items:center;gap:6px;color:var(--ev)}
+#hud .rec i{width:8px;height:8px;border-radius:50%;background:var(--ev);animation:blink 1.6s infinite}
+@keyframes blink{50%{opacity:.25}}
+
+/* ---------- portada / gate ---------- */
+#gate{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  justify-content:center;align-items:center;text-align:center;
+  padding:26px;background:rgba(11,22,32,.94);z-index:5;
+}
+#gate h2{font-family:var(--display);font-size:20px;font-weight:700;margin-bottom:8px}
+#gate p{color:var(--muted);font-size:13.5px;max-width:34ch;margin-bottom:8px}
+#gate .status{font-size:12px;color:var(--ev);min-height:18px;margin-bottom:14px;font-variant-numeric:tabular-nums}
+#gate .status.err{color:var(--sig)}
+.btn{
+  border:none;border-radius:12px;padding:14px 26px;cursor:pointer;
+  font-family:var(--display);font-size:15px;font-weight:700;letter-spacing:.02em;
+  background:var(--ev);color:#06231F;
+}
+.btn:disabled{opacity:.4;cursor:default}
+.btn:active{transform:scale(.98)}
+.btn:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+
+/* ---------- controles bajo el video ---------- */
+#controls{margin-top:12px;display:none}
+#controls.on{display:block}
+.row{display:flex;gap:8px;align-items:stretch}
+.pill{
+  flex:1;display:flex;justify-content:center;align-items:center;gap:8px;
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:11px 10px;font-size:13px;color:var(--muted);cursor:pointer;user-select:none;
+  font-family:var(--display);font-weight:500;
+}
+.pill.on{color:var(--ev);border-color:rgba(53,208,186,.5)}
+.pill:focus-visible{outline:2px solid var(--ev)}
+.slider-box{
+  margin-top:10px;background:var(--surface);border:1px solid var(--line);
+  border-radius:12px;padding:11px 14px;
+}
+.slider-box label{
+  display:flex;justify-content:space-between;font-size:11.5px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;
+  font-variant-numeric:tabular-nums;
+}
+.slider-box label b{color:var(--ev);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--ev)}
+
+/* leyenda */
+.legend{display:flex;flex-wrap:wrap;gap:10px 16px;margin-top:12px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:0}
+.tagline{margin-top:14px;text-align:center;font-size:12px;color:var(--muted);letter-spacing:.04em}
+.tagline b{color:var(--text);font-weight:600}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="brand">
+    <h1>Visión <b>DL</b></h1>
+    <span>demo de percepción</span>
+  </header>
+
+  <div id="stage">
+    <video id="cam" playsinline muted autoplay></video>
+    <canvas id="overlay"></canvas>
+    <div id="hud" style="display:none">
+      <span class="rec"><i></i>EN VIVO</span>
+      <span id="stats">— FPS · — ms · — objetos</span>
+    </div>
+    <div id="gate">
+      <h2>Percepción en tiempo real</h2>
+      <p>Una red neuronal (SSD + MobileNetV2, entrenada en COCO) corre <b>en tu teléfono</b> y detecta autos, peatones y señales sobre la imagen de la cámara.</p>
+      <p class="status" id="status">Preparando…</p>
+      <button class="btn" id="btn-start" disabled>Iniciar cámara</button>
+    </div>
+  </div>
+
+  <div id="controls">
+    <div class="row">
+      <button class="pill on" id="p-traffic" role="switch" aria-checked="true">Solo tráfico</button>
+      <button class="pill" id="p-flip">Cambiar cámara</button>
+    </div>
+    <div class="slider-box">
+      <label for="thr">Umbral de confianza <b id="thr-v">50%</b></label>
+      <input type="range" id="thr" min="0.30" max="0.80" step="0.05" value="0.50">
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--ev)"></i>Vehículos</span>
+      <span><i style="background:var(--gas)"></i>Personas</span>
+      <span><i style="background:var(--sig)"></i>Señalética</span>
+      <span><i style="background:var(--other)"></i>Otros</span>
+    </div>
+    <p class="tagline"><b>Percepción, no control</b> — el modelo ve, tú manejas.</p>
+  </div>
+</div>
+
+<!-- TensorFlow.js (motor) + COCO-SSD (modelo de detección preentrenado) -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+
+<script>
+/* ============================================================
+   Visión DL · Dashcam — pipeline
+   frame de video → tensor → forward pass (SSD-MobileNetV2)
+   → NMS → [caja, clase, confianza] → dibujo en canvas
+   ============================================================ */
+
+const video   = document.getElementById('cam');
+const canvas  = document.getElementById('overlay');
+const ctx     = canvas.getContext('2d');
+const gate    = document.getElementById('gate');
+const statusEl= document.getElementById('status');
+const btn     = document.getElementById('btn-start');
+const hud     = document.getElementById('hud');
+const statsEl = document.getElementById('stats');
+const stage   = document.getElementById('stage');
+
+let model = null;
+let running = false;
+let busy = false;
+let threshold = 0.5;
+let trafficOnly = true;
+let facing = 'environment';   // cámara trasera por defecto
+let stream = null;
+let inferMs = 0;              // media móvil exponencial del tiempo de inferencia
+
+/* Clases relevantes para tráfico (subset de las 80 de COCO) */
+const TRAFFIC = new Set(['car','truck','bus','motorcycle','bicycle','person','traffic light','stop sign','train']);
+
+/* Traducción de etiquetas al chileno */
+const ES = {
+  'person':'persona','car':'auto','truck':'camión','bus':'bus','motorcycle':'moto',
+  'bicycle':'bici','traffic light':'semáforo','stop sign':'disco pare','train':'tren',
+  'dog':'perro','cat':'gato','bird':'pájaro','backpack':'mochila','umbrella':'paraguas',
+  'handbag':'cartera','suitcase':'maleta','skateboard':'skate','chair':'silla',
+  'bench':'banca','potted plant':'planta','tv':'tele','laptop':'notebook',
+  'cell phone':'celular','bottle':'botella','cup':'taza','fire hydrant':'grifo',
+  'parking meter':'parquímetro','dining table':'mesa','book':'libro','clock':'reloj',
+  'bed':'cama','couch':'sofá','sink':'lavaplatos','refrigerator':'refri',
+  'keyboard':'teclado','mouse':'mouse','remote':'control','wine glass':'copa',
+  'traffic sign':'señal'
+};
+
+/* Color según grupo semántico */
+function colorFor(cls){
+  if(['car','truck','bus','motorcycle','bicycle','train'].includes(cls)) return getCSS('--ev');
+  if(cls==='person') return getCSS('--gas');
+  if(cls==='traffic light' || cls==='stop sign') return getCSS('--sig');
+  return getCSS('--other');
+}
+function getCSS(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+
+/* ---------- arranque: cargar modelo apenas abre la página ---------- */
+(async function boot(){
+  /* 1) ¿Estamos embebidos en un visor (Claude u otro iframe)? Ahí no puede funcionar. */
+  if(window.self !== window.top){
+    fail('Estás en el visor de Claude (embebido): aquí se bloquean las librerías, el modelo y la cámara. Descarga este archivo, súbelo a un hosting HTTPS y ábrelo directo en el navegador del teléfono.');
+    return;
+  }
+  /* 2) ¿Cargaron las librerías desde el CDN? Si no, cocoSsd/tf no existen. */
+  if(typeof tf === 'undefined' || typeof cocoSsd === 'undefined'){
+    fail('Las librerías no cargaron desde el CDN (jsdelivr). Revisa tu conexión o un bloqueador de contenido, y recarga la página.');
+    return;
+  }
+  /* 3) Contexto seguro: requisito del navegador para entregar la cámara. */
+  if(!window.isSecureContext){
+    fail('Necesitas HTTPS: la cámara no funciona abriendo el archivo directo (file://) ni por http. Súbelo a un hosting.');
+    return;
+  }
+  if(!navigator.mediaDevices?.getUserMedia){
+    fail('Este navegador no soporta acceso a cámara. Prueba Chrome o Safari actualizados.');
+    return;
+  }
+  /* 4) Descargar los pesos del modelo (~6 MB desde los servidores de TF). */
+  try{
+    statusEl.textContent = 'Descargando red neuronal (~6 MB)…';
+    model = await cocoSsd.load({ base:'lite_mobilenet_v2' }); // variante liviana: rápida en teléfonos
+    statusEl.textContent = 'Modelo listo · backend ' + tf.getBackend().toUpperCase();
+    btn.disabled = false;
+  }catch(e){
+    fail('Las librerías cargaron, pero los pesos del modelo (~6 MB) no pudieron descargarse. Revisa la conexión y recarga.');
+  }
+})();
+
+function fail(msg){
+  statusEl.textContent = msg;
+  statusEl.classList.add('err');
+  btn.disabled = true;
+}
+
+/* ---------- cámara ---------- */
+async function startCamera(){
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  const constraints = {
+    audio:false,
+    video:{ facingMode:{ ideal: facing }, width:{ ideal:1280 }, height:{ ideal:720 } }
+  };
+  stream = await navigator.mediaDevices.getUserMedia(constraints);
+  video.srcObject = stream;
+  await new Promise(res => video.onloadedmetadata = res);
+  await video.play();
+  /* el canvas trabaja en las dimensiones reales del video:
+     así las coordenadas del modelo calzan 1:1 con lo dibujado */
+  canvas.width  = video.videoWidth;
+  canvas.height = video.videoHeight;
+  stage.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+}
+
+btn.addEventListener('click', async ()=>{
+  btn.disabled = true;
+  statusEl.classList.remove('err');
+  statusEl.textContent = 'Pidiendo permiso de cámara…';
+  try{
+    await startCamera();
+    gate.style.display = 'none';
+    hud.style.display = 'flex';
+    document.getElementById('controls').classList.add('on');
+    running = true;
+    detectLoop();
+  }catch(e){
+    btn.disabled = false;
+    if(e.name === 'NotAllowedError'){
+      fail('Permiso denegado. Habilita la cámara para este sitio en los ajustes del navegador.');
+      btn.disabled = false;
+    }else{
+      fail('No se pudo abrir la cámara: ' + e.name);
+      btn.disabled = false;
+    }
+  }
+});
+
+/* ---------- loop de inferencia ---------- */
+async function detectLoop(){
+  if(!running) return;
+  if(model && !busy && video.readyState >= 2){
+    busy = true;
+    const t0 = performance.now();
+    try{
+      /* forward pass: devuelve hasta 20 detecciones con bbox en píxeles del video */
+      const preds = await model.detect(video, 20);
+      const dt = performance.now() - t0;
+      inferMs = inferMs ? inferMs*0.8 + dt*0.2 : dt;
+      const visibles = preds.filter(p =>
+        p.score >= threshold && (!trafficOnly || TRAFFIC.has(p.class))
+      );
+      draw(visibles);
+      statsEl.textContent =
+        `${(1000/inferMs).toFixed(0)} FPS · ${inferMs.toFixed(0)} ms · ${visibles.length} objeto${visibles.length!==1?'s':''}`;
+    }catch(e){ /* frame perdido: seguimos */ }
+    busy = false;
+  }
+  requestAnimationFrame(detectLoop);
+}
+
+/* ---------- dibujo estilo HUD: esquinas + etiqueta ---------- */
+function draw(preds){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const fs = Math.max(14, canvas.width * 0.022);   // fuente proporcional
+  ctx.font = `600 ${fs}px 'Space Grotesk', sans-serif`;
+  ctx.textBaseline = 'top';
+
+  for(const p of preds){
+    const [x,y,w,h] = p.bbox;
+    const col = colorFor(p.class);
+    const L = Math.min(w,h) * 0.22;               // largo de las esquinas
+    ctx.strokeStyle = col;
+    ctx.lineWidth = Math.max(2, canvas.width*0.0035);
+
+    /* cuatro esquinas en L (estética HUD, no caja completa) */
+    ctx.beginPath();
+    ctx.moveTo(x, y+L);       ctx.lineTo(x, y);       ctx.lineTo(x+L, y);
+    ctx.moveTo(x+w-L, y);     ctx.lineTo(x+w, y);     ctx.lineTo(x+w, y+L);
+    ctx.moveTo(x+w, y+h-L);   ctx.lineTo(x+w, y+h);   ctx.lineTo(x+w-L, y+h);
+    ctx.moveTo(x+L, y+h);     ctx.lineTo(x, y+h);     ctx.lineTo(x, y+h-L);
+    ctx.stroke();
+
+    /* etiqueta: clase + confianza */
+    const label = `${ES[p.class] || p.class} ${(p.score*100).toFixed(0)}%`;
+    const tw = ctx.measureText(label).width;
+    const pad = fs*0.35;
+    const ly = y - fs - pad*2 > 0 ? y - fs - pad*2 : y + 4;
+    ctx.fillStyle = 'rgba(11,22,32,.82)';
+    ctx.fillRect(x, ly, tw + pad*2, fs + pad*1.6);
+    ctx.fillStyle = col;
+    ctx.fillText(label, x + pad, ly + pad*0.8);
+  }
+}
+
+/* ---------- controles ---------- */
+const pTraffic = document.getElementById('p-traffic');
+pTraffic.addEventListener('click', ()=>{
+  trafficOnly = !trafficOnly;
+  pTraffic.classList.toggle('on', trafficOnly);
+  pTraffic.setAttribute('aria-checked', trafficOnly);
+  pTraffic.textContent = trafficOnly ? 'Solo tráfico' : 'Todas las clases (80)';
+});
+
+document.getElementById('p-flip').addEventListener('click', async ()=>{
+  facing = (facing === 'environment') ? 'user' : 'environment';
+  try{ await startCamera(); }catch(e){ facing = (facing==='environment')?'user':'environment'; }
+});
+
+const thr = document.getElementById('thr');
+thr.addEventListener('input', ()=>{
+  threshold = parseFloat(thr.value);
+  document.getElementById('thr-v').textContent = (threshold*100).toFixed(0)+'%';
+});
+
+/* pausa al ocultar la app (ahorra batería) */
+document.addEventListener('visibilitychange', ()=>{
+  running = !document.hidden && !!stream;
+  if(running) detectLoop();
+});
+</script>
+</body>
+</html>
